@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# Project Specific
+backend/uploads/
+backend/protected/
+backend/temp/
+backend/.env
+backend/cookies.txt
+
+# Node.js
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-multipart
+opencv-python
+Pillow
+imagehash
+chromadb
+invisible-watermark
+google-api-python-client
+yt-dlp
+apify-client  
+ 
