@@ -53,49 +53,41 @@ def download_video_clip(url: str, output_dir: str = "uploads/") -> str:
 
     COOKIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cookies.txt")
 
+    # Render/Cloud environment detection
+    is_render = os.getenv("RENDER") == "true"
+    
     ydl_opts = {
-        # Force the absolute lowest resolution (144p) to save massive amounts of data
         'format': 'worst[ext=mp4]/worst',
-        # Only download the first 10 seconds of the video for forensic analysis
         'download_sections': [{
             'start_time': 0,
             'end_time': 10,
         }],
         'force_keyframes_at_cuts': True,
-        # Force a simple filename template
         'outtmpl': os.path.join(abs_output_dir, '%(id)s.%(ext)s'),
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
-        'socket_timeout': 20,
-        'retries': 2,
-        'cookiefile': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
+        'ignoreerrors': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'web', 'android_vr'],
+                # Use mobile clients which are less likely to be blocked by 'bot detection'
+                'player_client': ['android', 'ios'],
                 'skip': ['hls', 'dash']
             }
         },
-        # Ignore errors so one bad cookie/video doesn't kill the whole drone
-        'ignoreerrors': True,
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # We use extract_info with download=True
             try:
                 info_dict = ydl.extract_info(url, download=True)
             except Exception as e:
-                # If cookie error occurs, try one more time WITHOUT cookies
-                if "cookies" in str(e).lower():
-                    ydl_opts['cookiefile'] = None
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl_no_cookies:
-                        info_dict = ydl_no_cookies.extract_info(url, download=True)
-                else:
-                    raise e
+                # Log the error but don't crash the whole process
+                print(f"Extraction failed for {url}: {e}")
+                return None
                     
             if not info_dict:
-                raise Exception("Could not extract video info")
+                return None
                 
             video_id = info_dict.get("id", None)
             

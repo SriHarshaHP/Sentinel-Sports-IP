@@ -11,7 +11,6 @@ from services.watermark_service import embed_watermark, detect_watermark
 from services.video_service import process_video_and_extract_frames, process_video_multi_hash
 from services.db_service import db_service
 from services.scraper_service import search_youtube, download_video_clip
-from services.apify_service import search_tiktok, search_instagram
 from services.ai_service import verify_infringement, generate_risk_summary, draft_dmca_notice
 from pydantic import BaseModel
 import json
@@ -362,11 +361,8 @@ async def scrape_and_check_video(req: ScrapeRequest):
                 'title': 'TARGETED ASSET SCAN',
                 'url': req.keyword
             }]
-        elif req.platform == "tiktok":
-            videos = search_tiktok(req.keyword, max_results=5)
-        elif req.platform == "instagram":
-            videos = search_instagram(req.keyword, max_results=5)
         else:
+            # FOCUS 100% ON YOUTUBE: Increased to 10 results for better coverage
             videos = search_youtube(req.keyword, max_results=10)
             
         if not videos:
