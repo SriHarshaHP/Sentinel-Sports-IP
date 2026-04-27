@@ -109,7 +109,7 @@ export default function SentinelPanel({ prefillKeyword, onClearPrefill, user }: 
             placeholder="ENTER SEARCH QUERY..."
           />
           <button
-            onClick={handleScrape}
+            onClick={() => handleScrape()}
             disabled={isScraping}
             className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold uppercase tracking-widest transition-colors disabled:opacity-50 border-l border-slate-800 shadow-[0_0_15px_rgba(37,99,235,0.2)]"
           >
