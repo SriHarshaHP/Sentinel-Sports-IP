@@ -32,7 +32,11 @@ app = FastAPI(title="Sentinel-Sports IP Vault API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://sentinel-sports-ip.vercel.app",
+        "https://www.sentinelsportsip.com"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
