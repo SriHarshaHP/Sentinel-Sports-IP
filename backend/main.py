@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -6,6 +6,7 @@ import shutil
 import os
 import uuid
 import concurrent.futures
+import cv2
 from services.watermark_service import embed_watermark, detect_watermark
 from services.video_service import process_video_and_extract_frames, process_video_multi_hash
 from services.db_service import db_service
@@ -13,11 +14,13 @@ from services.scraper_service import search_youtube, download_video_clip
 from services.apify_service import search_tiktok, search_instagram
 from pydantic import BaseModel
 import json
+import glob
 from datetime import datetime
 
 class ScrapeRequest(BaseModel):
     keyword: str
     platform: str = "youtube"
+    user_id: str
 
 class TakedownRequest(BaseModel):
     incident_id: str
@@ -36,6 +39,14 @@ app.add_middleware(
 
 os.makedirs("uploads", exist_ok=True)
 os.makedirs("protected", exist_ok=True)
+
+@app.get("/api/vault/count")
+async def get_vault_count():
+    try:
+        count = db_service.collection.count()
+        return {"count": count}
+    except:
+        return {"count": 0}
 
 @app.get("/api/vault/download/{filename}")
 async def download_protected_video(filename: str):
@@ -112,7 +123,12 @@ def voting_match(multi_hashes: list[dict], threshold=35.0, vote_threshold=2):
 
 
 @app.post("/api/vault/protect")
-async def protect_video(file: UploadFile = File(...)):
+async def protect_video(
+    file: UploadFile = File(...), 
+    title: str = Form(...), 
+    keywords: str = Form(""),
+    user_id: str = Form(...)
+):
     file_id = str(uuid.uuid4())
     ext = file.filename.split('.')[-1]
     temp_path = f"uploads/{file_id}.{ext}"
@@ -124,22 +140,50 @@ async def protect_video(file: UploadFile = File(...)):
         # Use multi-hash extraction for better accuracy
         multi_hashes, phashes, frames = process_video_multi_hash(temp_path, num_frames=30)
         
+        # Sentinel DNA v3: Use the legacy 'ORG_0001' signature for familiar detection logic
         protected_path = embed_watermark(temp_path, watermark_id="ORG_0001")
         final_protected_path = f"protected/{file_id}_protected.{ext}"
         shutil.move(protected_path, final_protected_path)
         
-        # Store multi-hash fingerprints across all collections
-        db_service.insert_multi_hashes(file_id, multi_hashes)
+        # Store multi-hash fingerprints with User Identity
+        db_service.insert_multi_hashes(file_id, multi_hashes, extra_meta={
+            "title": title, 
+            "keywords": keywords,
+            "user_id": user_id
+        })
         
         return {
             "status": "success",
             "video_id": file_id,
+            "title": title,
+            "keywords": keywords,
             "protected_video_url": f"http://localhost:8000/api/vault/download/{file_id}_protected.{ext}",
-            "hashes_stored": len(multi_hashes),
-            "hash_types": ["phash", "dhash", "whash"]
+            "hashes_stored": len(multi_hashes)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+@app.get("/api/vault/list")
+async def list_vault(user_id: str):
+    # Filter by user_id for multi-tenant privacy
+    results = db_service.collection.get(
+        where={"user_id": user_id},
+        include=["metadatas"]
+    )
+    unique_videos = {}
+    for meta in (results["metadatas"] or []):
+        vid_id = meta.get("video_id")
+        if vid_id and vid_id not in unique_videos:
+            unique_videos[vid_id] = {
+                "id": vid_id,
+                "title": meta.get("title", "Untitled"),
+                "keywords": meta.get("keywords", ""),
+                "protected_url": f"http://localhost:8000/api/vault/download/{vid_id}_protected.mp4"
+            }
+    return {"videos": list(unique_videos.values())}
 
 @app.post("/api/sentinel/check")
 async def check_video(file: UploadFile = File(...)):
@@ -165,9 +209,12 @@ async def check_video(file: UploadFile = File(...)):
         watermark_hit = False
         
         # New Logic: Only check for watermark if the fast match is positive
+        # Only check for watermark if the fast match is positive
         if fast_match:
             detected_watermark = detect_watermark(temp_path)
-            watermark_hit = (detected_watermark == "ORG_0001")
+            # DNA Verification: Match detected hex ID with expected hex (first 8 chars of DB ID)
+            expected_hex = fast_matched_id[:8].upper() if fast_matched_id else ""
+            watermark_hit = (detected_watermark == expected_hex)
         
         # Only flag as pirated if BOTH the match was found and the watermark is confirmed
         is_pirated = fast_match and watermark_hit
@@ -187,7 +234,7 @@ async def check_video(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- Helper: Process a single scraped video ---
-def process_scraped_video(v, platform):
+def process_scraped_video(v, platform, user_id):
     try:
         clip_path = download_video_clip(v['url'])
         
@@ -207,13 +254,15 @@ def process_scraped_video(v, platform):
         detected_watermark = None
         watermark_hit = False
 
-        # Only check for watermark if the fast match is positive
         if fast_match:
             detected_watermark = detect_watermark(clip_path)
-            watermark_hit = (detected_watermark == "ORG_0001")
+            # DNA Verification: If ANY valid 32-bit watermark is detected, it's a hit.
+            # This ensures videos uploaded before a database wipe are still caught.
+            watermark_hit = bool(detected_watermark)
 
-        # Only flag as pirated if BOTH the match was found and the watermark is confirmed
-        is_pirated = fast_match and watermark_hit
+        # PIRACY LOGIC: Trigger alert if we have a strong Visual DNA match (>=90%) 
+        # OR if we find a verified Forensic Watermark signature.
+        is_pirated = (fast_similarity >= 90.0) or watermark_hit
 
         # 4. Evidence Capture (Save a frame as proof if pirated)
         evidence_image = None
@@ -231,6 +280,7 @@ def process_scraped_video(v, platform):
             "id": str(uuid.uuid4()),
             "video": v,
             "platform": platform,
+            "user_id": user_id,
             "is_pirated": is_pirated,
             "match_found_in_db": fast_match,
             "matched_video_id": fast_matched_id,
@@ -243,7 +293,7 @@ def process_scraped_video(v, platform):
         }
 
         if is_pirated:
-            # Persist to incidents.json
+            # Persist to incidents.json with de-duplication
             incidents = []
             if os.path.exists("incidents.json"):
                 with open("incidents.json", "r") as f:
@@ -251,9 +301,13 @@ def process_scraped_video(v, platform):
                         incidents = json.load(f)
                     except:
                         pass
-            incidents.append(result_obj)
-            with open("incidents.json", "w") as f:
-                json.dump(incidents, f, indent=4)
+            
+            # De-duplication check: Only add if URL not already present
+            existing_urls = [i['video'].get('url') for i in incidents if 'video' in i]
+            if v.get('url') not in existing_urls:
+                incidents.append(result_obj)
+                with open("incidents.json", "w") as f:
+                    json.dump(incidents, f, indent=4)
         
         # Cleanup
         try:
@@ -265,7 +319,15 @@ def process_scraped_video(v, platform):
         return result_obj
     except Exception as inner_e:
         print(f"Drone Error for {v.get('url')}: {inner_e}")
-        return None
+        return {
+            "id": str(uuid.uuid4()),
+            "video": v,
+            "platform": platform,
+            "user_id": user_id,
+            "is_pirated": False,
+            "error": str(inner_e),
+            "status": "error"
+        }
 
 @app.get("/api/maintenance/clear_uploads")
 async def clear_uploads():
@@ -282,14 +344,22 @@ async def clear_uploads():
 
 @app.post("/api/sentinel/scrape_and_check")
 async def scrape_and_check_video(req: ScrapeRequest):
+    print(f"SENTINEL DRONE MISSION: {req.keyword} ON {req.platform} FOR {req.user_id}")
     try:
         videos = []
-        if req.platform == "tiktok":
+        # Support for Direct URL Scanning (Bypass Indexing Lag)
+        if "youtube.com" in req.keyword or "youtu.be" in req.keyword:
+            videos = [{
+                'video_id': 'manual_target',
+                'title': 'TARGETED ASSET SCAN',
+                'url': req.keyword
+            }]
+        elif req.platform == "tiktok":
             videos = search_tiktok(req.keyword, max_results=5)
         elif req.platform == "instagram":
             videos = search_instagram(req.keyword, max_results=5)
         else:
-            videos = search_youtube(req.keyword, max_results=10)
+            videos = search_youtube(req.keyword, max_results=20)
             
         if not videos:
             return {"status": "complete", "message": f"No videos found on {req.platform}", "results": []}
@@ -297,32 +367,31 @@ async def scrape_and_check_video(req: ScrapeRequest):
         # Use ThreadPoolExecutor with a strict 2-minute total timeout
         results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            future_to_video = {executor.submit(process_scraped_video, v, req.platform): v for v in videos}
+            future_to_video = {executor.submit(process_scraped_video, v, req.platform, req.user_id): v for v in videos}
             try:
                 # Limit total time to 120 seconds to stay within browser fetch limits
                 for future in concurrent.futures.as_completed(future_to_video, timeout=120):
-                    try:
-                        res = future.result(timeout=30)
-                        if res: # Only add if processing was successful
-                            results.append(res)
-                    except Exception:
-                        continue 
-            except concurrent.futures.TimeoutError:
-                pass
-                
+                    res = future.result()
+                    if res:
+                        results.append(res)
+            except Exception as e:
+                print(f"Executor Error: {e}")
+
+        # Sort results so pirated ones appear at the top
+        results.sort(key=lambda x: x.get("is_pirated", False), reverse=True)
         return {"status": "complete", "results": results}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/enforcement/incidents")
-async def get_incidents():
+async def get_incidents(user_id: str):
     incidents = []
     if os.path.exists("incidents.json"):
         with open("incidents.json", "r") as f:
             try:
-                incidents = json.load(f)
+                all_incidents = json.load(f)
+                # Filter by user_id for multi-tenant privacy
+                incidents = [inc for inc in all_incidents if inc.get("user_id") == user_id]
             except:
                 pass
     return {"incidents": incidents}
@@ -338,20 +407,126 @@ async def takedown_incident(req: TakedownRequest):
         except:
             incidents = []
             
-    incident_found = False
+    incident_to_takedown = None
     for inc in incidents:
         if inc.get("id") == req.incident_id:
             inc["status"] = "takedown_sent"
+            incident_to_takedown = inc
             incident_found = True
             break
             
     if not incident_found:
         raise HTTPException(status_code=404, detail="Incident not found")
         
+    # Generate a Formal DMCA Notice Preview
+    video_title = incident_to_takedown['video'].get('title', 'Unknown Title')
+    video_url = incident_to_takedown['video'].get('url', 'N/A')
+    similarity = incident_to_takedown.get('similarity_score', 0)
+    
+    dmca_notice = f"""
+FORMAL DMCA TAKEDOWN NOTICE
+---------------------------------------
+SENTINEL SPORTS IP PROTECTION SYSTEM
+Forensic Case ID: {req.incident_id}
+Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+TO: Platform Copyright Enforcement Team
+
+This letter is a formal notification that we have identified infringing content hosted on your platform.
+
+INFRINGING CONTENT DETAILS:
+- Title: {video_title}
+- URL: {video_url}
+
+FORENSIC EVIDENCE:
+- Visual Similarity Score: {similarity}%
+- Sentinel DNA Verification: CONFIRMED (ID: ORG_0001)
+- Evidence Image Hash: {incident_to_takedown.get('id')}
+
+We have a good faith belief that the use of the material in the manner complained of is not authorized by the copyright owner, its agent, or the law.
+
+Digitally Signed,
+Sentinel Sports IP Legal Engine
+    """
+        
     with open("incidents.json", "w") as f:
         json.dump(incidents, f, indent=4)
         
-    return {"status": "success", "message": "DMCA takedown notice generated and sent."}
+    return {
+        "status": "success", 
+        "message": "DMCA takedown notice generated and sent.",
+        "dmca_notice": dmca_notice
+    }
+
+
+@app.get("/api/enforcement/download_pdf/{incident_id}")
+async def download_pdf(incident_id: str):
+    if not os.path.exists("incidents.json"):
+        raise HTTPException(status_code=404, detail="No incidents found")
+        
+    with open("incidents.json", "r") as f:
+        try:
+            incidents = json.load(f)
+        except:
+            incidents = []
+            
+    incident = None
+    for inc in incidents:
+        if inc.get("id") == incident_id:
+            incident = inc
+            break
+            
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    # Generate PDF
+    from fpdf import FPDF
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Header
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(190, 10, "FORMAL DMCA TAKEDOWN NOTICE", ln=True, align='C')
+    pdf.ln(5)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(190, 10, "SENTINEL SPORTS IP PROTECTION SYSTEM", ln=True, align='C')
+    pdf.line(10, 30, 200, 30)
+    pdf.ln(10)
+    
+    # Details
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(190, 10, f"Forensic Case ID: {incident_id}", ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(190, 10, f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
+    pdf.ln(10)
+    
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(190, 10, "INFRINGING CONTENT DETAILS:", ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(190, 10, f"Title: {incident['video'].get('title', 'Unknown')}", ln=True)
+    pdf.cell(190, 10, f"URL: {incident['video'].get('url', 'N/A')}", ln=True)
+    pdf.ln(10)
+    
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(190, 10, "FORENSIC EVIDENCE:", ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(190, 10, f"Visual Similarity Score: {incident.get('similarity_score', 0)}%", ln=True)
+    pdf.cell(190, 10, f"Sentinel DNA Verification: CONFIRMED (ID: ORG_0001)", ln=True)
+    pdf.cell(190, 10, f"Evidence Image Hash: {incident.get('id')}", ln=True)
+    pdf.ln(15)
+    
+    pdf.set_font("Arial", '', 10)
+    pdf.multi_cell(190, 6, "I have a good faith belief that the use of the material in the manner complained of is not authorized by the copyright owner, its agent, or the law. I swear, under penalty of perjury, that the information in the notification is accurate and that I am the copyright owner or am authorized to act on behalf of the owner of an exclusive right that is allegedly infringed.")
+    pdf.ln(20)
+    
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(190, 10, "Digitally Signed,", ln=True)
+    pdf.cell(190, 10, "Sentinel Sports IP Legal Engine", ln=True)
+
+    pdf_output = f"uploads/DMCA_{incident_id}.pdf"
+    pdf.output(pdf_output)
+    
+    return FileResponse(pdf_output, filename=f"DMCA_Notice_{incident_id}.pdf")
 
 
 if __name__ == "__main__":

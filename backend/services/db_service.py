@@ -37,10 +37,10 @@ class VectorDBService:
             metadatas=metadatas
         )
 
-    def insert_multi_hashes(self, video_id: str, multi_hashes: list[dict]):
+    def insert_multi_hashes(self, video_id: str, multi_hashes: list[dict], extra_meta: dict = None):
         """
         Insert multi-hash fingerprints (phash, dhash, whash) into separate collections.
-        This enables cross-algorithm voting for much higher accuracy.
+        Includes rich metadata (Title, Keywords) for each frame.
         """
         p_vectors, p_ids, p_metas = [], [], []
         d_vectors, d_ids, d_metas = [], [], []
@@ -48,7 +48,7 @@ class VectorDBService:
         
         for i, mh in enumerate(multi_hashes):
             frame_id = f"{video_id}_frame_{i}"
-            meta = {"video_id": video_id, "frame": i}
+            meta = {"video_id": video_id, "frame": i, **(extra_meta or {})}
             
             # phash
             p_vectors.append(self._hex_to_vector(mh["phash"]))

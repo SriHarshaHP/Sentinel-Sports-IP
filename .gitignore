@@ -24,3 +24,9 @@ frontend/build/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Database and Evidence
+backend/chroma_db/
+backend/evidence/
+backend/error.log
+backend/incidents.json

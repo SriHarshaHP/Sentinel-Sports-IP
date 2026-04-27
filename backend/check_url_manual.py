@@ -91,17 +91,24 @@ def check_url(url):
         else:
             print("   - Skipping DNA check (no fast match).")
             
-        # 5. Final Result
-        is_pirated = fast_match and watermark_hit
+        # 5. Final Result (Dynamic logic: Fast Match is enough, Watermark is a bonus)
+        is_pirated = fast_match
         print("\n--- FINAL VERDICT ---")
         if is_pirated:
-            print("STATUS: PIRATED CONTENT DETECTED (DNA SIGNATURE MATCH)")
+            print("STATUS: PIRATED CONTENT DETECTED (Visual DNA Match)")
+            if detected_watermark and fast_id and detected_watermark == fast_id[:8].upper():
+                print(f"FORENSIC CONFIRMATION: DNA ID {detected_watermark} verified.")
         else:
-            print("STATUS: CLEAN (No matching DNA found)")
+            print("STATUS: CLEAN (No matching content found)")
             
     except Exception as e:
         print(f"ERROR: {str(e)}")
 
 if __name__ == "__main__":
-    url = "https://youtu.be/Fc_tWoBaiDk?si=5_fgtno3dcAG7daC"
-    check_url(url)
+    import sys
+    # Support for dynamic mission targets
+    target_url = "https://youtu.be/Fc_tWoBaiDk?si=5_fgtno3dcAG7daC"
+    if len(sys.argv) > 1:
+        target_url = sys.argv[1]
+    
+    check_url(target_url)

@@ -9,20 +9,31 @@ youtube = build('youtube', 'v3', developerKey=API_KEY)
 
 
 def search_youtube(keyword: str, max_results: int = 1):
+    from datetime import datetime, timedelta
+    # Optimize keywords for YouTube: replace commas with spaces and clean whitespace
+    cleaned = keyword.replace(",", " ").replace("  ", " ").strip()
+    # FORCE ONLY TWO WORDS: Prevent 'Keyword Overload' which breaks YouTube search
+    optimized_keyword = " ".join(cleaned.split()[:2])
+    yesterday = (datetime.utcnow() - timedelta(days=1)).isoformat() + "Z"
+    
     search_response = youtube.search().list(
-        q=keyword,
+        q=optimized_keyword,
         part='id,snippet',
         maxResults=max_results,
         type='video',
         videoEmbeddable='true',
-        order='date' 
+        order='date',
+        publishedAfter=yesterday
     ).execute()
     
     videos = []
     for search_result in search_response.get('items', []):
-        title = search_result['snippet']['title'].upper()
+        raw_title = search_result['snippet']['title']
+        # Clean title for console-safe logging
+        clean_title = raw_title.encode('ascii', 'ignore').decode('ascii')
+        
         # Additional safety check for LIVE keywords in title
-        if any(kw in title for kw in ['LIVE', '🔴', 'PREMIERE', 'BROADCAST']):
+        if any(kw in clean_title.upper() for kw in ['LIVE', '🔴', 'PREMIERE', 'BROADCAST']):
             continue
             
         if search_result['snippet'].get('liveBroadcastContent') != 'none':
@@ -30,7 +41,7 @@ def search_youtube(keyword: str, max_results: int = 1):
             
         videos.append({
             'video_id': search_result['id']['videoId'],
-            'title': search_result['snippet']['title'],
+            'title': raw_title,
             'url': f"https://www.youtube.com/watch?v={search_result['id']['videoId']}"
         })
     return videos
@@ -43,9 +54,15 @@ def download_video_clip(url: str, output_dir: str = "uploads/") -> str:
     COOKIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cookies.txt")
 
     ydl_opts = {
-        # Force a single file format (best MP4) to avoid needing FFmpeg for merging
-        'format': 'best[ext=mp4]/best',
-        # Force a very simple filename template
+        # Force the absolute lowest resolution (144p) to save massive amounts of data
+        'format': 'worst[ext=mp4]/worst',
+        # Only download the first 10 seconds of the video for forensic analysis
+        'download_sections': [{
+            'start_time': 0,
+            'end_time': 10,
+        }],
+        'force_keyframes_at_cuts': True,
+        # Force a simple filename template
         'outtmpl': os.path.join(abs_output_dir, '%(id)s.%(ext)s'),
         'quiet': True,
         'no_warnings': True,

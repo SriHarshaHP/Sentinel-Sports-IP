@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { AlertTriangle, CheckCircle, Search, Eye, Activity } from "lucide-react";
+import { useState, useEffect } from "react";
+import { AlertTriangle, CheckCircle, Search, Eye, Activity, Lock, Terminal, Wifi, Ban, Cpu, Video, ArrowRight } from "lucide-react";
 
 interface ScrapeResult {
   video: { title: string; url: string };
@@ -15,14 +15,37 @@ interface ScrapeResult {
   error?: string;
 }
 
-export default function SentinelPanel() {
+interface SentinelPanelProps {
+  prefillKeyword?: string;
+  onClearPrefill?: () => void;
+  user: any;
+}
+
+export default function SentinelPanel({ prefillKeyword, onClearPrefill, user }: SentinelPanelProps) {
   const [keyword, setKeyword] = useState("");
-  const [platform, setPlatform] = useState("youtube");
+  const [platform, setPlatform] = useState<"youtube" | "tiktok" | "instagram">("youtube");
   const [isScraping, setIsScraping] = useState(false);
   const [scrapeResults, setScrapeResults] = useState<ScrapeResult[]>([]);
+  const [vaultCount, setVaultCount] = useState<number | null>(null);
 
-  const handleScrape = async () => {
-    if (!keyword) return;
+  useEffect(() => {
+    if (user) fetchVaultCount();
+  }, [user]);
+
+  const fetchVaultCount = async () => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/vault/count?user_id=${user?.uid}`);
+      const data = await res.json();
+      setVaultCount(data.count);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleScrape = async (overrideKeyword?: string) => {
+    const finalKeyword = (typeof overrideKeyword === 'string') ? overrideKeyword : keyword;
+    if (!finalKeyword || vaultCount === 0) return;
+    
     setIsScraping(true);
     setScrapeResults([]);
 
@@ -30,7 +53,7 @@ export default function SentinelPanel() {
       const res = await fetch("http://localhost:8000/api/sentinel/scrape_and_check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyword, platform }),
+        body: JSON.stringify({ keyword: finalKeyword, platform, user_id: user.uid }),
       });
       const data = await res.json();
       if (data.results) {
@@ -44,122 +67,112 @@ export default function SentinelPanel() {
     }
   };
 
+  useEffect(() => {
+    if (prefillKeyword && vaultCount !== null && vaultCount > 0) {
+      setKeyword(prefillKeyword);
+      const timer = setTimeout(() => {
+        handleScrape(prefillKeyword);
+        onClearPrefill?.();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [prefillKeyword, vaultCount]);
+
+  if (vaultCount === 0) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-slate-500 min-h-[300px] text-center bg-slate-900/40 backdrop-blur-md border border-slate-700/50 rounded-lg">
+        <Lock className="w-16 h-16 mb-4 opacity-20" />
+        <h3 className="text-white font-medium mb-1">Drone Systems Locked</h3>
+        <p className="text-sm max-w-xs">The Sentinel requires reference media to identify piracy. Please upload your first asset to the <span className="text-blue-400">IP Vault</span> to activate live monitoring.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-full animate-in fade-in duration-500">
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-white flex items-center gap-2">
-            <Activity className="text-blue-400" />
-            Sentinel Drone (Live Monitoring)
-          </h2>
-          <p className="text-slate-400 mt-2 max-w-xl">
-            Query YouTube using preset keywords. The system fetches live clips, downloads them, and runs our Fast Check (pHash) and Deep Check (Watermark) algorithms to detect IP infringement in real-time.
-          </p>
+    <div className="h-full flex flex-col gap-6 animate-in fade-in duration-500 overflow-y-auto pr-2 custom-scrollbar">
+      
+      {/* Search Input Row */}
+      <div className="flex flex-col xl:flex-row justify-between items-center gap-4 bg-slate-900/40 backdrop-blur-md border border-slate-700/50 p-4 rounded-lg">
+        <div className="flex items-center gap-2">
+          <Activity className="text-blue-500 w-5 h-5" />
+          <span className="font-bold uppercase tracking-widest text-white text-sm">Active Scan Command</span>
         </div>
-        <div className="flex bg-slate-900 border border-slate-700 rounded-lg overflow-hidden shrink-0 mt-4 md:mt-0">
-            <select
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value)}
-              className="bg-transparent px-3 py-2 text-sm text-slate-300 border-r border-slate-700 outline-none focus:bg-slate-800"
-            >
-              <option value="youtube" className="bg-slate-900">YouTube</option>
-              <option value="tiktok" className="bg-slate-900">TikTok</option>
-              <option value="instagram" className="bg-slate-900">Instagram</option>
-            </select>
-            <input 
-              type="text" 
-
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              className="bg-transparent px-4 py-2 text-sm text-slate-300 outline-none w-48 focus:border-blue-500"
-              placeholder="e.g. NBA finals"
-            />
-            <button
-              onClick={handleScrape}
-              disabled={isScraping}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
-            >
-              {isScraping ? <Eye className="animate-pulse w-4 h-4" /> : <Search className="w-4 h-4" />}
-              {isScraping ? "Deploying..." : "Run Drone"}
-            </button>
+        <div className="flex bg-slate-950 border border-slate-800 rounded overflow-hidden shadow-inner flex-1 max-w-xl">
+          <div className="px-3 py-2 text-[10px] font-bold text-blue-500 bg-blue-500/10 border-r border-slate-800 flex items-center uppercase tracking-widest">
+            YOUTUBE
+          </div>
+          <input 
+            type="text" 
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            className="bg-transparent px-4 py-2 text-xs text-white outline-none flex-1 font-mono focus:bg-slate-900 transition-colors"
+            placeholder="ENTER SEARCH QUERY..."
+          />
+          <button
+            onClick={handleScrape}
+            disabled={isScraping}
+            className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold uppercase tracking-widest transition-colors disabled:opacity-50 border-l border-slate-800 shadow-[0_0_15px_rgba(37,99,235,0.2)]"
+          >
+            {isScraping ? <Eye className="animate-pulse w-3 h-3" /> : <Search className="w-3 h-3" />}
+            {isScraping ? "DEPLOYING..." : "RUN DRONE"}
+          </button>
         </div>
       </div>
 
-      <div className="flex-1 rounded-xl bg-slate-800/20 border border-slate-700/50 p-6 overflow-y-auto">
+      {/* Intercepted Signals Full View */}
+      <div className="bg-slate-900/40 backdrop-blur-md rounded-lg border border-slate-700/50 flex-1 flex flex-col p-6">
+        <div className="flex items-center justify-between mb-6 border-b border-slate-800/50 pb-4">
+          <div className="flex items-center gap-3">
+            <Wifi className="text-blue-500 w-6 h-6" />
+            <h2 className="font-bold text-[1.5rem] leading-[1.3] tracking-[-0.05em] uppercase text-white">Intercepted Signals</h2>
+          </div>
+          {isScraping && (
+             <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/10 border border-blue-500/30 rounded text-blue-500 text-[10px] font-bold tracking-widest uppercase">
+               <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+               SCAN ACTIVE
+             </div>
+          )}
+        </div>
         
-        {!isScraping && scrapeResults.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center opacity-50 text-slate-400 cursor-not-allowed min-h-[300px]">
-            <Activity className="w-16 h-16 mb-4" />
-            <p>Awaiting Sentinel Deployment</p>
-          </div>
-        )}
-
-        {isScraping && (
-          <div className="h-full flex flex-col items-center justify-center text-blue-400 min-h-[300px]">
-            <div className="relative mb-4">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-20"></span>
-              <Eye className="w-12 h-12 relative animate-pulse" />
+        <div className="flex flex-col gap-4 flex-1 overflow-y-auto custom-scrollbar pr-2 pb-4">
+              {isScraping ? (
+                <div className="flex flex-col items-center justify-center py-20 text-blue-500">
+                  <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                  <div className="text-[10px] uppercase tracking-widest font-bold animate-pulse">Scanning Target Area...</div>
+                </div>
+              ) : scrapeResults.length === 0 ? (
+                <div className="text-center text-slate-500 text-[10px] uppercase tracking-widest mt-10">No signals intercepted</div>
+              ) : (
+                scrapeResults.map((result, idx) => {
+                  const isCritical = result.is_pirated || result.deep_check_match;
+                  const isWarning = result.match_found_in_db && !result.deep_check_match;
+                  
+                  return (
+                    <div key={idx} className={`p-3 rounded-lg border group transition-all ${isCritical ? 'bg-slate-900/60 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.1)]' : isWarning ? 'bg-slate-900/40 border-orange-500/30' : 'bg-slate-900/40 border-slate-800'}`}>
+                      <div className="flex justify-between items-start mb-2">
+                        <div className={`px-2 py-0.5 text-[9px] font-black uppercase rounded tracking-widest ${isCritical ? 'bg-red-600 text-white' : isWarning ? 'bg-orange-500 text-white' : 'bg-slate-700 text-white'}`}>
+                          {isCritical ? 'THREAT: CRITICAL' : isWarning ? 'THREAT: ELEVATED' : 'THREAT: NONE'}
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-500">#{idx.toString().padStart(4, '0')}</span>
+                      </div>
+                      <div className="text-xs font-bold text-white mb-1 line-clamp-1" title={result.video.title}>{result.video.title}</div>
+                      <div className={`text-xs font-mono mb-2 truncate ${isCritical ? 'text-red-400' : 'text-slate-400'}`}>
+                        {result.detected_watermark ? `DNA: ${result.detected_watermark}` : 'Source: YOUTUBE'}
+                      </div>
+                      <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                        <span>SIMILARITY: {result.similarity_score || 0}%</span>
+                        <a href={result.video.url} target="_blank" rel="noreferrer"><ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform cursor-pointer hover:text-white" /></a>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
-            <p className="font-medium">Scraping YouTube & Computing Hashes...</p>
-            <p className="text-xs text-slate-500 mt-2">This may take a moment resolving video downloads.</p>
-          </div>
-        )}
 
-        {!isScraping && scrapeResults.length > 0 && (
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Risk Map Results</h3>
-            
-            {scrapeResults.map((result, idx) => (
-              <div key={idx} className={`p-5 rounded-lg border ${result.is_pirated ? 'bg-red-500/10 border-red-500/30' : 'bg-slate-800/60 border-slate-700'}`}>
-                {result.error ? (
-                  <div className="text-red-400 text-sm">Error processing {result.video?.title}: {result.error}</div>
-                ) : (
-                  <div className="flex flex-col md:flex-row gap-6">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        {result.is_pirated ? (
-                           <AlertTriangle className="w-5 h-5 text-red-500" />
-                        ) : (
-                           <CheckCircle className="w-5 h-5 text-green-500" />
-                        )}
-                        <h4 className="text-white font-medium line-clamp-1">{result.video.title}</h4>
-                      </div>
-                      <a href={result.video.url} target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:underline">{result.video.url}</a>
-                    </div>
 
-                    <div className="flex flex-row md:flex-col gap-4 text-sm shrink-0">
-                      <div className="bg-slate-900/80 px-3 py-2 rounded border border-slate-700/50 flex flex-col">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wider">Fast Check</span>
-                        {result.match_found_in_db ? (
-                          <div className="flex flex-col">
-                            <span className="text-red-400 font-semibold mt-0.5 whitespace-nowrap">Match Found</span>
-                            <span className="text-[10px] text-orange-400">{result.similarity_score}% Similar</span>
-                          </div>
-                        ) : (
-                          <span className="text-slate-300 mt-0.5">No Matches</span>
-                        )}
-                      </div>
-                      <div className="bg-slate-900/80 px-3 py-2 rounded border border-slate-700/50 flex flex-col">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wider">Deep Check</span>
-                        {result.deep_check_match ? (
-                          <div className="flex flex-col">
-                            <span className="text-red-400 font-semibold mt-0.5">
-                              {result.detected_watermark ? "Watermark Hit" : "Visual Match"}
-                            </span>
-                            {result.detected_watermark && <span className="text-[10px] text-red-300 font-mono">{result.detected_watermark}</span>}
-                          </div>
-                        ) : (
-                          <span className="text-slate-300 mt-0.5">Clean</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
           </div>
-        )}
-      </div>
+
+
     </div>
   );
 }

@@ -1,31 +1,76 @@
 "use client";
-import { useState } from "react";
+
+import { useState, useEffect } from "react";
+import { auth } from "@/lib/firebase";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import VaultPanel from "@/components/VaultPanel";
 import SentinelPanel from "@/components/SentinelPanel";
 import RiskMapPanel from "@/components/RiskMapPanel";
-import { Shield, Activity, Lock, Search } from "lucide-react";
+import LoginPage from "@/components/LoginPage";
+import { Shield, Activity, Lock, Search, LogOut } from "lucide-react";
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<"vault" | "sentinel" | "enforcement">("vault");
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [prefillKeyword, setPrefillKeyword] = useState("");
+
+  const handleDeployDrone = (keyword: string) => {
+    setPrefillKeyword(keyword);
+    setActiveTab("sentinel");
+  };
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await signOut(auth);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="animate-pulse flex flex-col items-center">
+          <Shield className="w-12 h-12 text-red-500 mb-4" />
+          <p className="text-slate-500 font-medium tracking-widest uppercase">Sentinel Initializing...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-300 font-sans selection:bg-cyan-500/30">
+    <div className="min-h-screen bg-slate-950 text-slate-300 font-sans selection:bg-red-500/30">
       {/* Background Glow */}
-      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-cyan-900/20 via-slate-950 to-slate-950"></div>
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-red-900/10 via-slate-950 to-slate-950"></div>
       
       {/* Navbar */}
       <nav className="relative z-10 border-b border-slate-800 bg-slate-950/50 backdrop-blur-md">
         <div className="container mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3 text-cyan-400">
+          <div className="flex items-center gap-3 text-red-500">
             <Shield className="w-6 h-6" />
-            <h1 className="text-xl font-bold tracking-widest uppercase">Sentinel IP</h1>
+            <h1 className="text-xl font-black tracking-tighter uppercase">Sentinel <span className="text-white">Sports IP</span></h1>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
-            </span>
-            <span className="text-xs font-medium text-cyan-500/80 tracking-wider">SYSTEM ONLINE</span>
+          <div className="flex items-center gap-6">
+            <div className="hidden md:flex flex-col items-end">
+              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Authorized Operator</span>
+              <span className="text-xs text-cyan-500/80 font-mono">{user.email}</span>
+            </div>
+            <button 
+              onClick={handleLogout}
+              className="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-red-500/50 hover:text-red-400 transition-all"
+              title="Secure Logout"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
           </div>
         </div>
       </nav>
@@ -70,7 +115,7 @@ export default function Dashboard() {
                 }`}
               >
                 <Search className="w-5 h-5" />
-                Risk Map (Phase 3)
+                Risk Map
               </button>
             </div>
           </aside>
@@ -78,9 +123,9 @@ export default function Dashboard() {
           {/* Content Area */}
           <section className="flex-1">
             <div className="rounded-2xl bg-slate-900/40 border border-slate-800/80 shadow-2xl backdrop-blur-xl p-8 min-h-[600px]">
-              {activeTab === "vault" && <VaultPanel />}
-              {activeTab === "sentinel" && <SentinelPanel />}
-              {activeTab === "enforcement" && <RiskMapPanel />}
+              {activeTab === "vault" && <VaultPanel onDeployDrone={handleDeployDrone} user={user} />}
+              {activeTab === "sentinel" && <SentinelPanel prefillKeyword={prefillKeyword} onClearPrefill={() => setPrefillKeyword("")} user={user} />}
+              {activeTab === "enforcement" && <RiskMapPanel user={user} />}
             </div>
           </section>
 
@@ -89,3 +134,4 @@ export default function Dashboard() {
     </div>
   );
 }
+
