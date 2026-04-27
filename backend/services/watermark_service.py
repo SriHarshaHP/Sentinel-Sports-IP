@@ -24,8 +24,16 @@ def embed_watermark(video_path, watermark_id="00000001"):
         raise Exception(f"Cannot open video: {video_path}")
         
     fps = cap.get(cv2.CAP_PROP_FPS)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    orig_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    orig_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    # Speed Optimization: Downscale to 720p if original is larger
+    width, height = orig_width, orig_height
+    if orig_width > 1280:
+        ratio = 1280 / orig_width
+        width = 1280
+        height = int(orig_height * ratio)
+        
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
     
@@ -44,6 +52,10 @@ def embed_watermark(video_path, watermark_id="00000001"):
     while True:
         ret, frame = cap.read()
         if not ret: break
+        
+        # Resize if downscaling is active
+        if width != orig_width:
+            frame = cv2.resize(frame, (width, height))
         
         # Continuously embed the DNA grid in every frame so it survives trimming
         roi = frame[0:16, 0:16, 0].astype(np.int16)

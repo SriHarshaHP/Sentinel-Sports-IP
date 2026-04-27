@@ -36,19 +36,10 @@ def process_video_and_extract_frames(video_path, num_frames=5):
     return hashes, extracted_frames
 
 
-def process_video_multi_hash(video_path, num_frames=30):
+def process_video_multi_hash(video_path, num_frames=15):
     """
     Enhanced frame extraction with multi-hash fingerprinting.
-    
-    Improvements over basic version:
-    - Extracts more frames (30 default) for better coverage
-    - Skips near-duplicate consecutive frames (scene-change aware)
-    - Generates multiple hash types per frame for voting-based matching
-    
-    Returns (multi_hashes, phashes, frames) where:
-    - multi_hashes: list of dicts {phash, dhash, whash, color}
-    - phashes: list of phash strings (for DB storage compatibility)
-    - frames: list of PIL Images
+    Optimized for Render Free Tier: Reduced default frames to 15.
     """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
