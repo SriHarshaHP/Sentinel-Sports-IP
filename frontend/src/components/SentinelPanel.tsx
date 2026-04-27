@@ -34,7 +34,8 @@ export default function SentinelPanel({ prefillKeyword, onClearPrefill, user }: 
 
   const fetchVaultCount = async () => {
     try {
-      const res = await fetch(`http://localhost:8000/api/vault/count?user_id=${user?.uid}`);
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${apiBase}/api/vault/count?user_id=${user?.uid}`);
       const data = await res.json();
       setVaultCount(data.count);
     } catch (err) {
@@ -50,7 +51,8 @@ export default function SentinelPanel({ prefillKeyword, onClearPrefill, user }: 
     setScrapeResults([]);
 
     try {
-      const res = await fetch("http://localhost:8000/api/sentinel/scrape_and_check", {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${apiBase}/api/sentinel/scrape_and_check`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ keyword: finalKeyword, platform, user_id: user.uid }),

@@ -36,7 +36,8 @@ export default function VaultPanel({ onDeployDrone, user }: VaultPanelProps) {
 
   const fetchMedia = async () => {
     try {
-      const res = await fetch(`http://localhost:8000/api/vault/list?user_id=${user?.uid}`);
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${apiBase}/api/vault/list?user_id=${user?.uid}`);
       const data = await res.json();
       setProtectedMedia(data.videos || []);
     } catch (err) {
@@ -56,7 +57,8 @@ export default function VaultPanel({ onDeployDrone, user }: VaultPanelProps) {
     formData.append("user_id", user.uid);
 
     try {
-      const res = await fetch("http://localhost:8000/api/vault/protect", {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${apiBase}/api/vault/protect`, {
         method: "POST",
         body: formData,
       });

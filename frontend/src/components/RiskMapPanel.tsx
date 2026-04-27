@@ -35,7 +35,8 @@ export default function RiskMapPanel({ user }: { user: any }) {
 
   const fetchIncidents = async () => {
     try {
-      const res = await fetch(`http://localhost:8000/api/enforcement/incidents?user_id=${user?.uid}`);
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${apiBase}/api/enforcement/incidents?user_id=${user?.uid}`);
       const data = await res.json();
       if (data.incidents) {
         // Filter to only show incidents with a detected watermark or high similarity, sort newest first
@@ -56,7 +57,8 @@ export default function RiskMapPanel({ user }: { user: any }) {
   const handleTakedown = async (id: string) => {
     setTakingDown(id);
     try {
-      const res = await fetch("http://localhost:8000/api/enforcement/takedown", {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${apiBase}/api/enforcement/takedown`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ incident_id: id }),
@@ -81,7 +83,8 @@ export default function RiskMapPanel({ user }: { user: any }) {
 
   const handleAiVerify = async (id: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/ai/verify/${id}`, { method: "POST" });
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${apiBase}/api/ai/verify/${id}`, { method: "POST" });
       const data = await res.json();
       if (res.ok) {
         setIncidents((prev) =>
@@ -95,7 +98,8 @@ export default function RiskMapPanel({ user }: { user: any }) {
 
   const handleAiDraftDmca = async (id: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/ai/dmca/${id}`, { method: "POST" });
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${apiBase}/api/ai/dmca/${id}`, { method: "POST" });
       const data = await res.json();
       if (res.ok) {
         setActiveNotice(data.draft);
@@ -329,7 +333,10 @@ export default function RiskMapPanel({ user }: { user: any }) {
             </div>
             <div className="p-6 border-t border-slate-800 flex justify-end gap-3">
               <button 
-                onClick={() => window.open(`http://localhost:8000/api/enforcement/download_pdf/${activeIncidentId}`)}
+                onClick={() => {
+                  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+                  window.open(`${apiBase}/api/enforcement/download_pdf/${activeIncidentId}`);
+                }}
                 className="px-6 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold tracking-widest text-[10px] uppercase transition-all shadow-[0_0_15px_rgba(37,99,235,0.2)]"
               >
                 Download Official PDF
