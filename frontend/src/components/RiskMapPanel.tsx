@@ -16,6 +16,14 @@ interface Incident {
   similarity_score: number | null;
   timestamp: string;
   status: string;
+  ai_summary?: string;
+  ai_verification?: {
+    is_infringing: boolean;
+    confidence: number;
+    broadcaster_logo: string;
+    event_details: string;
+    analysis_notes: string;
+  };
 }
 
 export default function RiskMapPanel({ user }: { user: any }) {
@@ -68,6 +76,33 @@ export default function RiskMapPanel({ user }: { user: any }) {
       alert("Failed to send takedown notice.");
     } finally {
       setTakingDown(null);
+    }
+  };
+
+  const handleAiVerify = async (id: string) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/ai/verify/${id}`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setIncidents((prev) =>
+          prev.map((inc) => (inc.id === id ? { ...inc, ai_verification: data } : inc))
+        );
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAiDraftDmca = async (id: string) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/ai/dmca/${id}`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setActiveNotice(data.draft);
+        setActiveIncidentId(id);
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -159,6 +194,26 @@ export default function RiskMapPanel({ user }: { user: any }) {
                         </div>
                       </div>
 
+                      {incident.ai_summary && (
+                        <div className="bg-blue-500/5 border border-blue-500/20 p-2 rounded text-[10px] text-blue-300 italic">
+                          <span className="font-bold text-blue-400 not-italic uppercase mr-1">AI Insight:</span>
+                          {incident.ai_summary}
+                        </div>
+                      )}
+
+                      {incident.ai_verification && (
+                        <div className="bg-green-500/5 border border-green-500/20 p-2 rounded text-[10px] space-y-1">
+                          <div className="flex justify-between font-bold">
+                            <span className="text-green-400 uppercase">AI Verification</span>
+                            <span className="text-white">Confidence: {(incident.ai_verification.confidence * 100).toFixed(0)}%</span>
+                          </div>
+                          <div className="text-slate-400">
+                            Detecting <span className="text-white">{incident.ai_verification.broadcaster_logo}</span> broadcast 
+                            {incident.ai_verification.event_details && <> of <span className="text-white">{incident.ai_verification.event_details}</span></>}.
+                          </div>
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-2 gap-2 bg-slate-900/50 p-3 border border-slate-800 rounded">
                         <div>
                           <span className="font-bold text-[8px] tracking-widest text-slate-500 uppercase block mb-1">Proof Engine</span>
@@ -181,15 +236,31 @@ export default function RiskMapPanel({ user }: { user: any }) {
                           View Enforcement Receipt
                         </button>
                       ) : (
-                        <div className="flex gap-2">
-                          <button className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-2 text-[10px] font-bold uppercase tracking-widest border border-slate-700 transition-colors">Ignore</button>
-                          <button 
-                            onClick={() => handleTakedown(incident.id)}
-                            disabled={takingDown === incident.id}
-                            className="flex-1 bg-red-600 hover:bg-red-500 text-white py-2 text-[10px] font-bold uppercase tracking-widest transition-colors shadow-[0_0_15px_rgba(239,68,68,0.2)] disabled:opacity-50 flex items-center justify-center gap-1"
-                          >
-                            {takingDown === incident.id ? "PROCESSING..." : "SEND TAKEDOWN"}
-                          </button>
+                        <div className="flex flex-col gap-2">
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => handleAiVerify(incident.id)}
+                              className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-1.5 text-[9px] font-bold uppercase tracking-widest border border-slate-700 transition-colors flex items-center justify-center gap-1"
+                            >
+                              <Search className="w-3 h-3" /> AI Verify
+                            </button>
+                            <button 
+                              onClick={() => handleAiDraftDmca(incident.id)}
+                              className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-1.5 text-[9px] font-bold uppercase tracking-widest border border-slate-700 transition-colors flex items-center justify-center gap-1"
+                            >
+                              <FileWarning className="w-3 h-3" /> AI DMCA
+                            </button>
+                          </div>
+                          <div className="flex gap-2">
+                            <button className="flex-1 bg-slate-900 hover:bg-slate-800 text-slate-500 py-2 text-[10px] font-bold uppercase tracking-widest border border-slate-800 transition-colors">Ignore</button>
+                            <button 
+                              onClick={() => handleTakedown(incident.id)}
+                              disabled={takingDown === incident.id}
+                              className="flex-1 bg-red-600 hover:bg-red-500 text-white py-2 text-[10px] font-bold uppercase tracking-widest transition-colors shadow-[0_0_15px_rgba(239,68,68,0.2)] disabled:opacity-50 flex items-center justify-center gap-1"
+                            >
+                              {takingDown === incident.id ? "PROCESSING..." : "SEND TAKEDOWN"}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>

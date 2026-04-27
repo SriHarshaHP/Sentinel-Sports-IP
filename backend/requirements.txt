@@ -8,5 +8,6 @@ chromadb
 invisible-watermark
 google-api-python-client
 yt-dlp
-apify-client  
+apify-client
+google-generativeai
  

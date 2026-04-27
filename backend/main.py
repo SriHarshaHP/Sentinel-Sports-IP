@@ -12,6 +12,7 @@ from services.video_service import process_video_and_extract_frames, process_vid
 from services.db_service import db_service
 from services.scraper_service import search_youtube, download_video_clip
 from services.apify_service import search_tiktok, search_instagram
+from services.ai_service import verify_infringement, generate_risk_summary, draft_dmca_notice
 from pydantic import BaseModel
 import json
 import glob
@@ -293,6 +294,9 @@ def process_scraped_video(v, platform, user_id):
         }
 
         if is_pirated:
+            # Generate AI summary only for confirmed piracy to save time
+            result_obj["ai_summary"] = generate_risk_summary({"platform": platform, "video": v, "similarity": fast_similarity})
+            
             # Persist to incidents.json with de-duplication
             incidents = []
             if os.path.exists("incidents.json"):
@@ -359,7 +363,7 @@ async def scrape_and_check_video(req: ScrapeRequest):
         elif req.platform == "instagram":
             videos = search_instagram(req.keyword, max_results=5)
         else:
-            videos = search_youtube(req.keyword, max_results=20)
+            videos = search_youtube(req.keyword, max_results=10)
             
         if not videos:
             return {"status": "complete", "message": f"No videos found on {req.platform}", "results": []}
@@ -453,10 +457,44 @@ Sentinel Sports IP Legal Engine
         json.dump(incidents, f, indent=4)
         
     return {
-        "status": "success", 
-        "message": "DMCA takedown notice generated and sent.",
         "dmca_notice": dmca_notice
     }
+
+@app.post("/api/ai/verify/{incident_id}")
+async def ai_verify_incident(incident_id: str):
+    if not os.path.exists("incidents.json"):
+        raise HTTPException(status_code=404, detail="No incidents found")
+    
+    with open("incidents.json", "r") as f:
+        incidents = json.load(f)
+    
+    incident = next((inc for inc in incidents if inc["id"] == incident_id), None)
+    if not incident or not incident.get("evidence_frame"):
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    
+    verification = verify_infringement(incident["evidence_frame"])
+    
+    # Save verification result back to incident
+    incident["ai_verification"] = verification
+    with open("incidents.json", "w") as f:
+        json.dump(incidents, f, indent=4)
+        
+    return verification
+
+@app.post("/api/ai/dmca/{incident_id}")
+async def ai_draft_dmca(incident_id: str):
+    if not os.path.exists("incidents.json"):
+        raise HTTPException(status_code=404, detail="No incidents found")
+    
+    with open("incidents.json", "r") as f:
+        incidents = json.load(f)
+    
+    incident = next((inc for inc in incidents if inc["id"] == incident_id), None)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    
+    draft = draft_dmca_notice(incident)
+    return {"draft": draft}
 
 
 @app.get("/api/enforcement/download_pdf/{incident_id}")
