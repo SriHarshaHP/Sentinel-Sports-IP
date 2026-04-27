@@ -361,16 +361,19 @@ async def scrape_and_check_video(req: ScrapeRequest):
                 'title': 'TARGETED ASSET SCAN',
                 'url': req.keyword
             }]
-        else:
-            # FOCUS 100% ON YOUTUBE: Increased to 10 results for better coverage
-            videos = search_youtube(req.keyword, max_results=10)
+        # Render/Cloud environment optimization: Limit workers and results to prevent CPU choking
+        is_render = os.getenv("RENDER") == "true"
+        max_results = 3 if is_render else 10
+        max_workers = 1 if is_render else 5
+
+        if req.platform == "youtube":
+            videos = search_youtube(req.keyword, max_results=max_results)
             
         if not videos:
             return {"status": "complete", "message": f"No videos found on {req.platform}", "results": []}
             
-        # Use ThreadPoolExecutor with a strict 2-minute total timeout
         results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_video = {executor.submit(process_scraped_video, v, req.platform, req.user_id): v for v in videos}
             try:
                 # Limit total time to 120 seconds to stay within browser fetch limits
